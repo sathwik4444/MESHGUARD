@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-ADGUARD_IP="${SATHWIK_ADGUARD_IP:-100.102.245.39}"
+ADGUARD_IP="${1:-${SATHWIK_ADGUARD_IP:-100.102.245.39}}"
 INSTALL_DIR="/usr/local/lib/sathwik-mesh"
 DAEMON_BIN="$INSTALL_DIR/sathwik-dnsd"
 CLI_BIN="/usr/local/bin/server"
@@ -23,6 +23,7 @@ NM_CONF_FILE="/etc/NetworkManager/conf.d/99-sathwik-dns.conf"
 STATE_DIR="/var/lib/sathwik-mesh"
 BACKUP_DIR="$STATE_DIR/resolver-backup"
 RUN_DIR="/run/sathwik-mesh"
+SERVER_IP_FILE="$STATE_DIR/server_ip"
 
 # Legacy files to clean up from older versions
 LEGACY_SUDOERS="/etc/sudoers.d/sathwik-server-cli"
@@ -58,6 +59,8 @@ if command -v iptables >/dev/null 2>&1; then
 fi
 
 install -d -m 0755 -o root -g root "$INSTALL_DIR" "$STATE_DIR" "$BACKUP_DIR" "$RUN_DIR"
+printf "%s\n" "$ADGUARD_IP" > "$SERVER_IP_FILE"
+chmod 0644 "$SERVER_IP_FILE"
 
 # ------------------------------------------------------------------------------
 # 1. SNAPSHOT ORIGINAL RESOLVER & DNS MANAGER STATE (NON-DESTRUCTIVE)
@@ -157,8 +160,13 @@ cat << 'EOF_DAEMON' > "$DAEMON_BIN"
 
 set -uo pipefail
 
-ADGUARD_IP="${SATHWIK_ADGUARD_IP:-100.102.245.39}"
 STATE_DIR="/var/lib/sathwik-mesh"
+SERVER_IP_FILE="$STATE_DIR/server_ip"
+if [ -f "$SERVER_IP_FILE" ]; then
+    ADGUARD_IP=$(head -n 1 "$SERVER_IP_FILE" 2>/dev/null || echo "100.102.245.39")
+else
+    ADGUARD_IP="${SATHWIK_ADGUARD_IP:-100.102.245.39}"
+fi
 RUN_DIR="/run/sathwik-mesh"
 MODE_FILE="$STATE_DIR/mode"
 ACTIVE_ROUTE_FILE="$RUN_DIR/active_route"
@@ -596,8 +604,13 @@ cat << 'EOF_CLI' > "$CLI_BIN"
 
 set -euo pipefail
 
-ADGUARD_IP="${SATHWIK_ADGUARD_IP:-100.102.245.39}"
 STATE_DIR="/var/lib/sathwik-mesh"
+SERVER_IP_FILE="$STATE_DIR/server_ip"
+if [ -f "$SERVER_IP_FILE" ]; then
+    ADGUARD_IP=$(head -n 1 "$SERVER_IP_FILE" 2>/dev/null || echo "100.102.245.39")
+else
+    ADGUARD_IP="${SATHWIK_ADGUARD_IP:-100.102.245.39}"
+fi
 BACKUP_DIR="$STATE_DIR/resolver-backup"
 RUN_DIR="/run/sathwik-mesh"
 MODE_FILE="$STATE_DIR/mode"
@@ -728,12 +741,72 @@ ensure_tailscale_authenticated() {
     fi
 }
 
+atomic_write_resolv() {
+    local content="$1"
+    local route_name="$2"
+    local tmp_file
+    if command -v chattr >/dev/null 2>&1 && [ -e /etc/resolv.conf ] && [ ! -L /etc/resolv.conf ]; then
+        chattr -i /etc/resolv.conf 2>/dev/null || true
+    fi
+    [ -L /etc/resolv.conf ] && rm -f /etc/resolv.conf
+    umask 077
+    tmp_file=$(mktemp "/etc/.resolv.tmp.XXXXXXXXXX")
+    printf "%s\n" "$content" > "$tmp_file"
+    chmod 0644 "$tmp_file"
+    mv -f "$tmp_file" /etc/resolv.conf
+    printf "%s\n" "$route_name" > "$ACTIVE_ROUTE_FILE"
+    chmod 0644 "$ACTIVE_ROUTE_FILE" 2>/dev/null || true
+}
+
+write_adguard_resolv() {
+    local header_tag="$1"
+    local mode_label="$2"
+    local content
+    content=$(cat << EOF
+$header_tag
+# Managed by Sathwik Server Mesh ($mode_label)
+nameserver $ADGUARD_IP
+options timeout:1 attempts:2
+EOF
+)
+    atomic_write_resolv "$content" "adguard"
+}
+
+write_fallback_resolv() {
+    local header_tag="$1"
+    local mode_label="$2"
+    local dhcp_lines=""
+    local src_file line
+    for src_file in "/run/NetworkManager/resolv.conf" "/run/systemd/resolve/resolv.conf"; do
+        if [ -f "$src_file" ]; then
+            while IFS= read -r line; do
+                case "$line" in
+                    "nameserver $ADGUARD_IP"*|"nameserver 100.100.100.100"*|"nameserver 127."*) ;;
+                    nameserver*|search*|domain*)
+                        dhcp_lines="${dhcp_lines}${line}"$'\n'
+                        ;;
+                esac
+            done < "$src_file"
+            break
+        fi
+    done
+    local content
+    content=$(cat << EOF
+$header_tag
+# Managed by Sathwik Server Mesh ($mode_label)
+${dhcp_lines}nameserver 1.1.1.1
+nameserver 8.8.8.8
+options timeout:1 attempts:1
+EOF
+)
+    atomic_write_resolv "$content" "fallback"
+}
+
 signal_daemon() {
     systemctl start "$SERVICE_NAME" 2>/dev/null || true
     if [ -p "$FIFO_FILE" ]; then
         printf "WAKE\n" > "$FIFO_FILE" 2>/dev/null || true
     fi
-    sleep 0.2
 }
 
 set_mode() {
@@ -741,6 +814,21 @@ set_mode() {
     install -d -m 0755 -o root -g root "$STATE_DIR"
     printf "%s\n" "$target_mode" > "$MODE_FILE"
     chmod 0644 "$MODE_FILE"
+    case "$target_mode" in
+        on)
+            write_adguard_resolv "# SATHWIK-MESH:FORCED-ON" "FORCED ON - Strict Server Routing"
+            ;;
+        off)
+            write_fallback_resolv "# SATHWIK-MESH:FORCED-OFF" "FORCED OFF - Natural DNS"
+            ;;
+        auto)
+            if live_dns_verify >/dev/null 2>&1; then
+                write_adguard_resolv "# SATHWIK-MESH:ADGUARD-STRICT" "AUTO - AdGuard Shield Active"
+            else
+                write_fallback_resolv "# SATHWIK-MESH:NATURAL-FALLBACK" "AUTO - Server Offline Natural Fallback"
+            fi
+            ;;
+    esac
     signal_daemon
 }
 
@@ -843,11 +931,27 @@ show_status() {
     echo -e "${BOLD}Active /etc/resolv.conf:${NC}"
     sed 's/^/  /' /etc/resolv.conf 2>/dev/null || true
     echo -e "${BOLD}=====================================================${NC}"
-    echo -e "Commands: ${CYAN}server on${NC} | ${CYAN}server off${NC} | ${CYAN}server auto${NC} | ${CYAN}server status${NC} | ${CYAN}server login${NC}\n"
+    echo -e "Commands: ${CYAN}server on${NC} | ${CYAN}server off${NC} | ${CYAN}server auto${NC} | ${CYAN}server status${NC} | ${CYAN}server ip <ip>${NC} | ${CYAN}server login${NC}\n"
 }
 
 case "$CMD" in
     status|--status)
+        show_status
+        ;;
+    ip|--ip)
+        require_root_for_action
+        new_ip="${2:-}"
+        if [ -z "$new_ip" ]; then
+            echo -e "${BOLD}Current Server IP:${NC} ${CYAN}$ADGUARD_IP${NC}"
+            echo "Usage: server ip <tailscale_node_ip>"
+            exit 1
+        fi
+        install -d -m 0755 -o root -g root "$STATE_DIR"
+        printf "%s\n" "$new_ip" > "$SERVER_IP_FILE"
+        chmod 0644 "$SERVER_IP_FILE"
+        ADGUARD_IP="$new_ip"
+        echo -e "${GREEN}✓ Target AdGuard server IP updated to:${NC} ${BOLD}$new_ip${NC}"
+        signal_daemon
         show_status
         ;;
     on|--on)
