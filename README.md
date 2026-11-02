@@ -26,7 +26,6 @@ The installer runs with administrator privileges and changes system DNS configur
 - [How it works](#-how-it-works)
 - [Requirements](#-requirements)
 - [Installation](#-installation)
-- [First-time setup](#-first-time-setup)
 - [Command reference](#-command-reference)
 - [Tailscale sharing and access](#-tailscale-sharing-and-access)
 - [Installed files](#-installed-files)
