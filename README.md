@@ -56,14 +56,14 @@ MESHGUARD manages DNS routing on the Linux client. **AdGuard performs the DNS fi
 
 ~~~mermaid
 flowchart TD
-    A[Applications] --> B[Linux system resolver]
-    B --> C[/etc/resolv.conf]
-    C -->|AdGuard route| D[Tailscale network]
-    D --> E[AdGuard DNS endpoint]
-    F[sathwik-dnsd daemon] -->|DNS health probes| E
-    F -->|updates resolver route| C
-    F -->|when endpoint is unreachable| G[Fallback DNS route]
-    G --> B
+    apps["Applications"] --> resolver["Linux system resolver"]
+    resolver --> resolv["/etc/resolv.conf"]
+    resolv -->|AdGuard route| tailscale["Tailscale network"]
+    tailscale --> adguard["AdGuard DNS endpoint"]
+    daemon["sathwik-dnsd daemon"] -->|DNS health probes| adguard
+    daemon -->|updates resolver route| resolv
+    daemon -->|when endpoint is unreachable| fallback["Fallback DNS route"]
+    fallback --> resolver
 ~~~
 
 The daemon monitors the configured endpoint and updates the resolver route according to the selected mode. The AdGuard server must be reachable over Tailscale and must accept DNS requests from the client.
