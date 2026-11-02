@@ -26,8 +26,8 @@ RUN_DIR="/run/sathwik-mesh"
 
 # Legacy files to clean up from older versions
 LEGACY_SUDOERS="/etc/sudoers.d/sathwik-server-cli"
-LEGACY_SERVICE="dns-failover-guard.service"
-LEGACY_BIN="/usr/local/bin/dns-failover-guard.sh"
+LEGACY_SERVICES=("dns-failover-guard.service" "dns-adblock-watchdog.service")
+LEGACY_BINS=("/usr/local/bin/dns-failover-guard.sh" "/usr/local/bin/dns-adblock-watchdog.sh")
 
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
@@ -42,9 +42,20 @@ if [ "${EUID:-$(id -u)}" -ne 0 ]; then
 fi
 
 # Clean up legacy insecure sudoers or older service units if present
-rm -f "$LEGACY_SUDOERS" "$LEGACY_BIN" "/etc/systemd/system/$LEGACY_SERVICE"
-systemctl stop "$LEGACY_SERVICE" 2>/dev/null || true
-systemctl disable "$LEGACY_SERVICE" 2>/dev/null || true
+rm -f "$LEGACY_SUDOERS"
+for s in "${LEGACY_SERVICES[@]}"; do
+    systemctl stop "$s" 2>/dev/null || true
+    systemctl disable "$s" 2>/dev/null || true
+    rm -f "/etc/systemd/system/$s"
+done
+for b in "${LEGACY_BINS[@]}"; do
+    rm -f "$b"
+done
+if command -v iptables >/dev/null 2>&1; then
+    iptables -D OUTPUT -j DNS_BLOCK 2>/dev/null || true
+    iptables -F DNS_BLOCK 2>/dev/null || true
+    iptables -X DNS_BLOCK 2>/dev/null || true
+fi
 
 install -d -m 0755 -o root -g root "$INSTALL_DIR" "$STATE_DIR" "$BACKUP_DIR" "$RUN_DIR"
 
@@ -315,7 +326,7 @@ probe_adguard_fallback() {
     local tx_hi=$(( (RANDOM % 254) + 1 ))
     local tx_lo=$(( (RANDOM % 254) + 1 ))
     local tx_hex
-    printf -v tx_hex "\\x%02x\\x%02x" "$tx_hi" "$tx_lo"
+    printf -v tx_hex "\\\\x%02x\\\\x%02x" "$tx_hi" "$tx_lo"
     local query="${tx_hex}\\x01\\x00\\x00\\x01\\x00\\x00\\x00\\x00\\x00\\x00\\x07example\\x03com\\x00\\x00\\x01\\x00\\x01"
 
     if ! exec 3<>"/dev/udp/${ADGUARD_IP}/53" 2>/dev/null; then
@@ -443,7 +454,7 @@ atomic_write_resolv() {
     fi
 
     umask 077
-    tmp_file=$(mktemp "$RUN_DIR/resolv.XXXXXXXXXX")
+    tmp_file=$(mktemp "/etc/.resolv.tmp.XXXXXXXXXX")
     printf "%s\n" "$content" > "$tmp_file"
     chmod 0644 "$tmp_file"
     mv -f "$tmp_file" "$RESOLV_FILE"
@@ -776,6 +787,15 @@ show_status() {
     [ -f "$ACTIVE_ROUTE_FILE" ] && IFS= read -r route < "$ACTIVE_ROUTE_FILE" 2>/dev/null || true
     [ -f "$LAST_STATUS_FILE" ] && IFS= read -r last_probe < "$LAST_STATUS_FILE" 2>/dev/null || true
 
+    if [ "$route" = "unknown" ] && [ -f /etc/resolv.conf ]; then
+        local first_line
+        IFS= read -r first_line < /etc/resolv.conf 2>/dev/null || true
+        case "$first_line" in
+            *"ADGUARD-STRICT"*|*"FORCED-ON"*) route="adguard" ;;
+            *"NATURAL-FALLBACK"*|*"FORCED-OFF"*) route="fallback" ;;
+        esac
+    fi
+
     local ts_ip
     ts_ip=$(tailscale ip -4 2>/dev/null || echo "")
 
@@ -910,7 +930,8 @@ Restart=always
 RestartSec=2
 MemoryMax=16M
 CPUQuota=3%
-ProtectSystem=full
+ProtectSystem=true
+ReadWritePaths=/etc /var/lib/sathwik-mesh /run/sathwik-mesh
 PrivateTmp=true
 StandardOutput=journal
 StandardError=journal
@@ -929,6 +950,7 @@ echo -e "${BOLD}============================================================${NC
 install_tailscale_if_needed
 systemctl daemon-reload
 systemctl enable --now tailscaled.service
-systemctl enable --now sathwik-dnsd.service
+systemctl restart sathwik-dnsd.service
+systemctl enable sathwik-dnsd.service
 
 "$CLI_BIN" auto
