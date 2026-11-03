@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use or reference MESHGUARD, please cite it as below."
+authors:
+  - family-names: "Inteti"
+    given-names: "Sathwik"
+    alias: "sathwik4444"
+    email: "sathwikinteti@gmail.com"
+title: "MESHGUARD: Resilient Linux DNS Routing and Adaptive Failover over Tailscale"
+version: 1.2.1
+date-released: 2026-11-03
+url: "https://github.com/sathwik4444/MESHGUARD"
+repository-code: "https://github.com/sathwik4444/MESHGUARD"
+keywords:
+  - "sathwik"
+  - "sathwik inteti"
+  - "sathwik4444"
+  - "sathwik server mesh"
+  - "meshguard"
+  - "tailscale"
+  - "adguard-home"
+  - "dns-failover"
+  - "arch-linux"
+  - "network-automation"
+  - "wireguard"
+  - "linux-dns"
+license: "MIT"

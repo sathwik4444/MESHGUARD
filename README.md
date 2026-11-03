@@ -1,6 +1,7 @@
 # MESHGUARD
 
-**Linux DNS routing and automatic failover over Tailscale.**
+**Automated Linux DNS Routing & Resilient AdGuard Failover over Tailscale**  
+*Authored and maintained by [Sathwik Inteti](https://github.com/sathwik4444) ([@sathwik4444](https://github.com/sathwik4444))*
 
 ## ⚡ Quick install
 
@@ -14,9 +15,12 @@ curl -fsSLO https://raw.githubusercontent.com/sathwik4444/MESHGUARD/main/block.s
 
 The installer runs with administrator privileges and changes system DNS configuration. Review the script and back up any custom resolver or NetworkManager configuration before running it.
 
+[![Author](https://img.shields.io/badge/Author-Sathwik%20Inteti-blue?style=flat&logo=github)](https://github.com/sathwik4444)
+[![GitHub](https://img.shields.io/badge/GitHub-sathwik4444-181717?style=flat&logo=github)](https://github.com/sathwik4444/MESHGUARD)
 [![ShellCheck](https://github.com/sathwik4444/MESHGUARD/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/sathwik4444/MESHGUARD/actions/workflows/shellcheck.yml)
 [![Linux](https://img.shields.io/badge/platform-Linux-1793D1?logo=linux&logoColor=white)](https://kernel.org/)
 [![Tailscale](https://img.shields.io/badge/network-Tailscale-242424?logo=tailscale&logoColor=white)](https://tailscale.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Changelog](https://img.shields.io/badge/changelog-Keep%20a%20Changelog-E05735?logo=keepachangelog&logoColor=white)](CHANGELOG.md)
 
 ---
@@ -36,11 +40,13 @@ The installer runs with administrator privileges and changes system DNS configur
 - [Uninstallation](#-uninstallation)
 - [Development and CI](#-development-and-ci)
 - [Changelog](CHANGELOG.md)
+- [Author and Maintainer](#-author-and-maintainer)
+- [Keywords and Topics](#-keywords-and-search-topics)
 - [License](#-license)
 
 ## 🛡️ Overview
 
-MESHGUARD is a Linux DNS-routing and failover utility built around a Tailscale-connected AdGuard DNS endpoint.
+**MESHGUARD** (formerly *Sathwik Server Mesh*) is an open-source Linux DNS routing, health monitoring, and adaptive failover automation system engineered by **Sathwik Inteti** ([@sathwik4444](https://github.com/sathwik4444)). It establishes seamless, zero-maintenance DNS integration between local Linux machines (Arch Linux, Ubuntu/Debian, Fedora) and self-hosted AdGuard Home or Pi-hole instances running on mobile nodes or remote servers across a private [Tailscale](https://tailscale.com) WireGuard mesh.
 
 The current installer, `block.sh`, installs and configures:
 
@@ -290,6 +296,21 @@ shellcheck --shell=bash --severity=error block.sh
 
 This workflow provides static analysis. It does not replace end-to-end testing of DNS routing, Tailscale connectivity, systemd sandbox permissions, or resolver restoration.
 
+## 👨‍💻 Author and Maintainer
+
+**Sathwik Inteti**
+- **GitHub:** [@sathwik4444](https://github.com/sathwik4444)
+- **Repository:** [https://github.com/sathwik4444/MESHGUARD](https://github.com/sathwik4444/MESHGUARD)
+- **Email:** [sathwikinteti@gmail.com](mailto:sathwikinteti@gmail.com)
+- **Project:** Creator of MESHGUARD and Sathwik Server Mesh automation tools.
+
+## 🏷️ Keywords and Search Topics
+
+For search engine indexing (Google, GitHub, Bing) and semantic discovery:
+
+`Sathwik` · `Sathwik Inteti` · `sathwik4444` · `Sathwik Server Mesh` · `sathwik meshguard` · `Sathwik Tailscale DNS` · `Tailscale AdGuard DNS Failover` · `Linux DNS Routing Automation` · `Arch Linux Tailscale DNS` · `RFC 1035 Wire Format DNS Prober` · `Zero-Fork Python DNS Coprocess` · `AdGuard Home Failover Watchdog` · `NetworkManager DNS Dispatcher` · `systemd-resolved Bypass` · `Tailscale Mesh AdBlocker`
+
 ## 📄 License
 
-There is currently no `LICENSE` file in this repository. Until a license is added, do not assume the code is licensed for redistribution or reuse.
+This project is licensed under the [MIT License](LICENSE) - see the [LICENSE](LICENSE) file for details.  
+Copyright (c) 2026 **Sathwik Inteti** ([@sathwik4444](https://github.com/sathwik4444)).

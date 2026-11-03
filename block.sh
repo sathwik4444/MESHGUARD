@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# SATHWIK SERVER MESH - HARDENED PRODUCTION DNS DAEMON & CLI INSTALLER
+# MESHGUARD: SATHWIK SERVER MESH - HARDENED DNS DAEMON & CLI INSTALLER
+# Author: Sathwik Inteti (@sathwik4444) <sathwikinteti@gmail.com>
+# Repository: https://github.com/sathwik4444/MESHGUARD
+# License: MIT
 # ==============================================================================
 # Target AdGuard Server : 100.102.245.39 (Tailscale Mesh ACL Protected)
 # Terminal Commands     : server [on | off | auto | status | login | uninstall]
