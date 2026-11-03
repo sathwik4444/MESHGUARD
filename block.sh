@@ -23,6 +23,7 @@ NM_CONF_FILE="/etc/NetworkManager/conf.d/99-sathwik-dns.conf"
 STATE_DIR="/var/lib/sathwik-mesh"
 BACKUP_DIR="$STATE_DIR/resolver-backup"
 RUN_DIR="/run/sathwik-mesh"
+install -d -m 0755 -o root -g root "$RUN_DIR" 2>/dev/null || mkdir -p "$RUN_DIR" 2>/dev/null || true
 SERVER_IP_FILE="$STATE_DIR/server_ip"
 
 # Legacy files to clean up from older versions
@@ -168,6 +169,7 @@ else
     ADGUARD_IP="${SATHWIK_ADGUARD_IP:-100.102.245.39}"
 fi
 RUN_DIR="/run/sathwik-mesh"
+install -d -m 0755 -o root -g root "$RUN_DIR" 2>/dev/null || mkdir -p "$RUN_DIR" 2>/dev/null || true
 MODE_FILE="$STATE_DIR/mode"
 ACTIVE_ROUTE_FILE="$RUN_DIR/active_route"
 LAST_STATUS_FILE="$RUN_DIR/last_probe_status"
@@ -331,6 +333,7 @@ fi
 # Fallback full DNS wire-format validator using dd + od (if Python 3 is unavailable)
 probe_adguard_fallback() {
     local timeout_sec="${1:-2}"
+    install -d -m 0755 -o root -g root "$RUN_DIR" 2>/dev/null || mkdir -p "$RUN_DIR" 2>/dev/null || true
     local tx_hi=$(( (RANDOM % 254) + 1 ))
     local tx_lo=$(( (RANDOM % 254) + 1 ))
     local tx_hex
@@ -406,10 +409,13 @@ probe_adguard_fallback() {
 
 probe_adguard() {
     local timeout_sec="${1:-2}"
+    local int_timeout="${timeout_sec%.*}"
+    int_timeout=$(( ${int_timeout:-2} + 1 ))
     if [ "$USE_PY_COPROC" -eq 1 ] && kill -0 "$COPROC_PID" 2>/dev/null; then
         local result=""
         if printf "%s %s\n" "$ADGUARD_IP" "$timeout_sec" >&"${DNS_WORKER[1]}" 2>/dev/null; then
-            if IFS= read -r -t "$((timeout_sec + 1))" -u "${DNS_WORKER[0]}" result 2>/dev/null; then
+            if IFS= read -r -t "$int_timeout" -u "${DNS_WORKER[0]}" result 2>/dev/null; then
+                install -d -m 0755 -o root -g root "$RUN_DIR" 2>/dev/null || mkdir -p "$RUN_DIR" 2>/dev/null || true
                 printf "%s\n" "$result" > "$LAST_STATUS_FILE"
                 chmod 0644 "$LAST_STATUS_FILE" 2>/dev/null || true
                 case "$result" in
@@ -423,16 +429,16 @@ probe_adguard() {
 }
 
 # Two-Stage Adaptive Check:
-# Stage 1: Generous 2s timeout (prevents false failover during Wi-Fi/DERP lag spikes)
-# Stage 2: 3 rapid verification probes (0.3s interval, 1s timeout) on packet loss
+# Stage 1: Generous 2.5s timeout (prevents false failover during Wi-Fi sleep / DERP lag spikes)
+# Stage 2: 3 rapid verification probes (0.4s interval, 1.5s timeout) on packet loss
 verify_server_health() {
-    if probe_adguard 2; then
+    if probe_adguard 2.5; then
         return 0
     fi
     local i=1
     while [ "$i" -le "$BURST_COUNT" ]; do
-        IFS= read -r -t 0.3 -u 8 _ 2>/dev/null || true
-        if probe_adguard 1; then
+        IFS= read -r -t 0.4 -u 8 _ 2>/dev/null || true
+        if probe_adguard 1.5; then
             return 0
         fi
         i=$((i + 1))
@@ -467,6 +473,7 @@ atomic_write_resolv() {
     chmod 0644 "$tmp_file"
     mv -f "$tmp_file" "$RESOLV_FILE"
 
+    install -d -m 0755 -o root -g root "$RUN_DIR" 2>/dev/null || mkdir -p "$RUN_DIR" 2>/dev/null || true
     printf "%s\n" "$route_name" > "$ACTIVE_ROUTE_FILE"
     chmod 0644 "$ACTIVE_ROUTE_FILE" 2>/dev/null || true
 }
@@ -519,7 +526,9 @@ EOF
 }
 
 CONSECUTIVE_RECOVERY=0
+CONSECUTIVE_FAILURE=0
 WARNED_FORCED_ON_OFFLINE=0
+LAST_NOTIF_TIME=0
 
 while true; do
     CURRENT_MODE="auto"
@@ -558,26 +567,38 @@ while true; do
         *)
             WARNED_FORCED_ON_OFFLINE=0
             if verify_server_health; then
+                CONSECUTIVE_FAILURE=0
                 CONSECUTIVE_RECOVERY=$((CONSECUTIVE_RECOVERY + 1))
                 if [ "$CURRENT_ROUTE" != "adguard" ]; then
-                    if [ -z "$CURRENT_ROUTE" ] || [ "$CONSECUTIVE_RECOVERY" -ge 2 ]; then
+                    if [ -z "$CURRENT_ROUTE" ] || [ "$CONSECUTIVE_RECOVERY" -ge 3 ]; then
                         write_adguard_resolv "$ADGUARD_TAG" "AUTO - AdGuard Shield Active"
                         echo "[sathwik-dnsd] 🛡️ AdGuard Server ($ADGUARD_IP) verified ONLINE (RFC 1035 NOERROR). Switched to AdGuard DNS."
-                        notify_desktop_users "normal" "AdGuard Shield Active" \
-                            "Connected to $ADGUARD_IP. All DNS queries are now filtered."
+                        now=$(date +%s)
+                        if [ $((now - LAST_NOTIF_TIME)) -ge 45 ]; then
+                            notify_desktop_users "normal" "AdGuard Shield Active" \
+                                "Connected to $ADGUARD_IP. All DNS queries are now filtered."
+                            LAST_NOTIF_TIME=$now
+                        fi
                     fi
                 elif [ "$CURRENT_HEADER" != "$ADGUARD_TAG" ]; then
                     write_adguard_resolv "$ADGUARD_TAG" "AUTO - AdGuard Shield Active"
                 fi
             else
                 CONSECUTIVE_RECOVERY=0
+                CONSECUTIVE_FAILURE=$((CONSECUTIVE_FAILURE + 1))
                 if [ "$CURRENT_ROUTE" != "fallback" ]; then
-                    local_reason=""
-                    [ -f "$LAST_STATUS_FILE" ] && IFS= read -r local_reason < "$LAST_STATUS_FILE" 2>/dev/null || true
-                    write_fallback_resolv "$FALLBACK_TAG" "AUTO - Server Offline Natural Fallback"
-                    echo "[sathwik-dnsd] ⚡ AdGuard Server ($ADGUARD_IP) unreachable ($local_reason). Switched to Natural Fallback DNS."
-                    notify_desktop_users "normal" "Switched to Natural Fallback DNS" \
-                        "AdGuard server ($ADGUARD_IP) is offline. Internet remains active via fallback DNS."
+                    if [ "$CONSECUTIVE_FAILURE" -ge 2 ]; then
+                        local_reason=""
+                        [ -f "$LAST_STATUS_FILE" ] && IFS= read -r local_reason < "$LAST_STATUS_FILE" 2>/dev/null || true
+                        write_fallback_resolv "$FALLBACK_TAG" "AUTO - Server Offline Natural Fallback"
+                        echo "[sathwik-dnsd] ⚡ AdGuard Server ($ADGUARD_IP) unreachable ($local_reason). Switched to Natural Fallback DNS."
+                        now=$(date +%s)
+                        if [ $((now - LAST_NOTIF_TIME)) -ge 45 ]; then
+                            notify_desktop_users "normal" "Switched to Natural Fallback DNS" \
+                                "AdGuard server ($ADGUARD_IP) is offline. Internet remains active via fallback DNS."
+                            LAST_NOTIF_TIME=$now
+                        fi
+                    fi
                 elif [ "$CURRENT_HEADER" != "$FALLBACK_TAG" ]; then
                     write_fallback_resolv "$FALLBACK_TAG" "AUTO - Server Offline Natural Fallback"
                 fi
@@ -613,6 +634,7 @@ else
 fi
 BACKUP_DIR="$STATE_DIR/resolver-backup"
 RUN_DIR="/run/sathwik-mesh"
+install -d -m 0755 -o root -g root "$RUN_DIR" 2>/dev/null || mkdir -p "$RUN_DIR" 2>/dev/null || true
 MODE_FILE="$STATE_DIR/mode"
 ACTIVE_ROUTE_FILE="$RUN_DIR/active_route"
 LAST_STATUS_FILE="$RUN_DIR/last_probe_status"
@@ -754,6 +776,7 @@ atomic_write_resolv() {
     printf "%s\n" "$content" > "$tmp_file"
     chmod 0644 "$tmp_file"
     mv -f "$tmp_file" /etc/resolv.conf
+    install -d -m 0755 -o root -g root "$RUN_DIR" 2>/dev/null || mkdir -p "$RUN_DIR" 2>/dev/null || true
     printf "%s\n" "$route_name" > "$ACTIVE_ROUTE_FILE"
     chmod 0644 "$ACTIVE_ROUTE_FILE" 2>/dev/null || true
 }
@@ -1036,6 +1059,8 @@ MemoryMax=16M
 CPUQuota=3%
 ProtectSystem=true
 ReadWritePaths=/etc /var/lib/sathwik-mesh /run/sathwik-mesh
+RuntimeDirectory=sathwik-mesh
+RuntimeDirectoryMode=0755
 PrivateTmp=true
 StandardOutput=journal
 StandardError=journal
