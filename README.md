@@ -17,6 +17,7 @@ The installer runs with administrator privileges and changes system DNS configur
 [![ShellCheck](https://github.com/sathwik4444/MESHGUARD/actions/workflows/shellcheck.yml/badge.svg)](https://github.com/sathwik4444/MESHGUARD/actions/workflows/shellcheck.yml)
 [![Linux](https://img.shields.io/badge/platform-Linux-1793D1?logo=linux&logoColor=white)](https://kernel.org/)
 [![Tailscale](https://img.shields.io/badge/network-Tailscale-242424?logo=tailscale&logoColor=white)](https://tailscale.com/)
+[![Changelog](https://img.shields.io/badge/changelog-Keep%20a%20Changelog-E05735?logo=keepachangelog&logoColor=white)](CHANGELOG.md)
 
 ---
 
@@ -34,6 +35,7 @@ The installer runs with administrator privileges and changes system DNS configur
 - [Current implementation caveats](#-current-implementation-caveats)
 - [Uninstallation](#-uninstallation)
 - [Development and CI](#-development-and-ci)
+- [Changelog](CHANGELOG.md)
 - [License](#-license)
 
 ## 🛡️ Overview
