@@ -68,3 +68,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `server login`: Interactive Tailscale browser authentication.
   - `server uninstall`: Full restoration of initial resolver symlinks/files and configuration cleanup.
 - **Cross-Distribution Installer**: Dynamic package manager integration for Arch, Debian/Ubuntu, Fedora/RHEL, and openSUSE.
+
